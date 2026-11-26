@@ -3,6 +3,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.pipeline.segment_delivery import (
+    default_pack_lines,
+    derive_revision_lines,
+    segment_checksum,
+    split_segments,
+)
+
 SEED_ROWS: dict[str, list[dict[str, Any]]] = {
     "media_source": [{'id': 1,
   'status': '已登记',
@@ -507,7 +514,31 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
   '覆盖时长秒': '7200',
   '导出格式': 'WebVTT',
   '下载次数': '5',
-  '生成时间': '2026-09-03'}],
+  '生成时间': '2026-09-03'},
+ {'id': 4,
+  'status': '可下载',
+  'pending': False,
+  'abnormal': False,
+  '字幕包编号': 'SBPK-0004',
+  '关联媒体源': 'MEDI-0001',
+  '绑定版本': 'v3',
+  '字幕行数': '300',
+  '覆盖时长秒': '7200',
+  '导出格式': 'SRT',
+  '下载次数': '2',
+  '生成时间': '2026-09-04'},
+ {'id': 5,
+  'status': '可下载',
+  'pending': False,
+  'abnormal': False,
+  '字幕包编号': 'SBPK-0005',
+  '关联媒体源': 'MEDI-0001',
+  '绑定版本': 'v4',
+  '字幕行数': '300',
+  '覆盖时长秒': '7200',
+  '导出格式': 'SRT',
+  '下载次数': '0',
+  '生成时间': '2026-11-20'}],
     "media_index": [{'id': 1,
   'status': '构建中',
   'pending': True,
@@ -723,7 +754,60 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
   '交付格式': 'SRT',
   '交付结论': '签收',
   '重交次数': '1',
-  '交付时间': '2026-09-03'}],
+  '交付时间': '2026-09-03'},
+ {'id': 4,
+  'status': '部分签收',
+  'pending': True,
+  'abnormal': False,
+  '回执编号': 'DLRC-0004',
+  '关联字幕包': 'SBPK-0004',
+  '接收方标识': '内容分发平台A',
+  '交付行数': '100',
+  '交付格式': 'SRT',
+  '交付结论': '部分签收',
+  '重交次数': '0',
+  '交付时间': '2026-09-05'},
+ {'id': 5,
+  'status': '交付中',
+  'pending': True,
+  'abnormal': False,
+  '回执编号': 'DLRC-0005',
+  '关联字幕包': 'SBPK-0005',
+  '接收方标识': '内容分发平台A',
+  '交付行数': '0',
+  '交付格式': 'SRT',
+  '交付结论': '-',
+  '重交次数': '0',
+  '交付时间': '2026-11-20'},
+ {'id': 6,
+  'status': '待交付',
+  'pending': True,
+  'abnormal': False,
+  '回执编号': 'DLRC-0006',
+  '关联字幕包': 'SBPK-0005',
+  '接收方标识': '视频归档系统',
+  '交付行数': '0',
+  '交付格式': 'SRT',
+  '交付结论': '-',
+  '重交次数': '0',
+  '交付时间': '-'}],
+    "segment_delivery": [{'id': 1,
+  'status': '已签收',
+  'pending': False,
+  'abnormal': False,
+  '交付段编号': 'SEGD-0001',
+  '关联字幕包': 'SBPK-0004',
+  '接收方标识': '内容分发平台A',
+  '片段区间': '1-100',
+  '内容校验和': '',
+  '已送至行号': '100',
+  '抵扣来源': '-',
+  '签收凭据': 'SGV-SBPK-0004-S1-0001',
+  '重复签收': '否',
+  '_seg_no': 1,
+  '_start': 1,
+  '_end': 100,
+  '_credited': False}],
     "archive_shelf": [{'id': 1,
   'status': '待归档',
   'pending': True,
@@ -797,3 +881,18 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
   '操作来源': '系统自动',
   '操作时间': '2026-09-03'}]
 }
+
+# 字幕包正文行：同一媒体源的各版本共享正文，隐藏字段 _lines 供分段校验使用。
+for _pack in SEED_ROWS["subtitle_pack"]:
+    _pack["_lines"] = default_pack_lines(
+        str(_pack["关联媒体源"]), int(_pack["字幕行数"]))
+
+# 新版字幕包 SBPK-0005：相对旧包 SBPK-0004 首尾改字、中段不变。
+_old_pack = next(row for row in SEED_ROWS["subtitle_pack"] if row["字幕包编号"] == "SBPK-0004")
+_new_pack = next(row for row in SEED_ROWS["subtitle_pack"] if row["字幕包编号"] == "SBPK-0005")
+_new_pack["_lines"] = derive_revision_lines(_old_pack["_lines"], edit_head=True, edit_tail=True)
+
+# 旧包首段已签收：内容校验和按真实字幕行落账，供迟到签收抵扣逻辑复查。
+_old_seg1 = split_segments(len(_old_pack["_lines"]))[0]
+SEED_ROWS["segment_delivery"][0]["内容校验和"] = segment_checksum(
+    _old_pack["_lines"], _old_seg1[0], _old_seg1[1])

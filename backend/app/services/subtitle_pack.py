@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 import hashlib
 
+from app.pipeline.segment_delivery import default_pack_lines, derive_revision_lines
 from app.services.base import BaseModuleService
 from app.store import store
 
@@ -34,9 +35,54 @@ class SubtitlePackService(BaseModuleService):
             "下载次数": "0", "生成时间": "2026-11-01",
             "status": "可下载", "pending": False, "abnormal": False,
             "_checksum": checksum,
+            "_lines": default_pack_lines(media_id, line_count),
         }
         rows.append(entry)
         return entry, f"字幕包 {pack_id} 已创建，绑定 {version_id}"
+
+    def create_revision_pack(
+        self, old_pack_id: str, new_pack_id: str, new_version: str,
+        edit_head: bool = True, edit_tail: bool = True,
+    ) -> tuple[dict[str, Any] | None, str]:
+        """基于旧包派生新版字幕包：首尾改字、中段不变，供局部补发抵扣校验。"""
+        rows = store.rows(self.MODULE)
+        old = next((r for r in rows if r.get("字幕包编号") == old_pack_id), None)
+        if old is None:
+            return None, f"旧字幕包 {old_pack_id} 不存在"
+        if any(r.get("字幕包编号") == new_pack_id for r in rows):
+            return None, f"字幕包编号 {new_pack_id} 已存在"
+        old_lines = list(old.get("_lines") or default_pack_lines(
+            str(old.get("关联媒体源")), int(old.get("字幕行数", "0") or 0)))
+        new_lines = derive_revision_lines(old_lines, edit_head, edit_tail)
+        checksum = hashlib.md5("\n".join(new_lines).encode()).hexdigest()[:8]
+        entry = {
+            "id": max((int(r.get("id", 0)) for r in rows), default=0) + 1,
+            "字幕包编号": new_pack_id, "关联媒体源": old.get("关联媒体源"),
+            "绑定版本": new_version, "字幕行数": old.get("字幕行数"),
+            "覆盖时长秒": old.get("覆盖时长秒"), "导出格式": old.get("导出格式"),
+            "下载次数": "0", "生成时间": "2026-11-01",
+            "status": "可下载", "pending": False, "abnormal": False,
+            "_checksum": checksum, "_lines": new_lines,
+        }
+        rows.append(entry)
+        return entry, f"新版字幕包 {new_pack_id} 已创建（首尾改字，中段不变），绑定 {new_version}"
+
+    def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
+        if action in ("领取剩余文件", "办结"):
+            entry = store.find(self.MODULE, entry_id)
+            if entry is None:
+                return None, f"{self.ENTITY} {entry_id} 不存在或已归档"
+            from app.services import service_for
+            service = service_for("segment_delivery")
+            if service is None:
+                return None, "分段交付服务未注册"
+            pack_code = str(entry.get("字幕包编号"))
+            if action == "领取剩余文件":
+                ok, message = service.claim_remaining_for_pack(pack_code)  # type: ignore[attr-defined]
+            else:
+                ok, message = service.close_pack(pack_code)  # type: ignore[attr-defined]
+            return (entry if ok else None), message
+        return super().run_action(entry_id, action)
 
     def get_packs_by_version(self, version_id: str) -> list[dict[str, Any]]:
         """获取绑定到指定版本的所有字幕包。"""

@@ -22,6 +22,7 @@ from app.services.fail_redeliver import FailRedeliverService
 from app.services.transcribe_quota import TranscribeQuotaService
 from app.services.sample_qc import SampleQcService
 from app.services.delivery_receipt import DeliveryReceiptService
+from app.services.segment_delivery import SegmentDeliveryService
 from app.services.archive_shelf import ArchiveShelfService
 from app.services.media_audit import MediaAuditService
 
@@ -46,6 +47,7 @@ SERVICES: dict[str, BaseModuleService] = {
     "transcribe_quota": TranscribeQuotaService(),
     "sample_qc": SampleQcService(),
     "delivery_receipt": DeliveryReceiptService(),
+    "segment_delivery": SegmentDeliveryService(),
     "archive_shelf": ArchiveShelfService(),
     "media_audit": MediaAuditService(),
 }

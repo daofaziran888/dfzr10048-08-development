@@ -70,6 +70,7 @@ npm run dev
 | 转写配额 | `transcribe_quota` | 配额条目 | 配额编号、来源渠道、转写引擎 |
 | 抽样质检 | `sample_qc` | 质检样本 | 样本编号、关联任务、抽样比例 |
 | 交付回执 | `delivery_receipt` | 回执记录 | 回执编号、关联字幕包、接收方标识 |
+| 分段交付 | `segment_delivery` | 交付段 | 交付段编号、关联字幕包、接收方标识 |
 | 归档架位 | `archive_shelf` | 归档条目 | 归档编号、关联媒体源、架位标识 |
 | 采集审计 | `media_audit` | 审计条目 | 审计编号、关联对象、操作类型 |
 
@@ -80,6 +81,19 @@ npm run dev
   `frontend/src/domain/<模块>.ts`，用于承载真实业务差异并维持36题位容量。
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
+
+## 分段交付与局部补发
+
+- 交付回执提供「局部补发」入口：为（字幕包, 接收方）生成/刷新分段交付计划，
+  待发范围由服务端按收件方及片段校验决定，随后跳到「分段交付」发送页继续。
+- 交付段状态流转：待生成 → 已领取 → 已签收；被旧签收抵扣的片段为已抵扣。
+- 旧签收仅在同一收件方、相同区间且内容校验和一致时抵扣新包待发段；
+  改过的行必须送达；重送签收不重复计行（同一区间内容只保留一次有效签收凭据）。
+- 发送页可确认已发/抵扣/待发区间与实际停止位置，下载实际的剩余字幕文件，
+  并按签收凭据复查；字幕包页可领取剩余字幕文件并在全部接收方签收后办结。
+- 专用接口（先于通用资源路由注册）：
+  `POST/GET /api/segment_delivery/plan`、`POST /api/segment_delivery/claim|progress|sign`、
+  `GET /api/segment_delivery/vouchers/{voucher}`、`GET /api/segment_delivery/remaining`。
 
 领域：数据工程
 子方向：数据采集、爬虫与RPA

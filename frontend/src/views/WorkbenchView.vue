@@ -95,6 +95,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 import {
   createEntry,
@@ -106,6 +107,7 @@ import {
 import type { EntryRow } from '@/data/types'
 
 const props = defineProps<{ moduleKey: string }>()
+const router = useRouter()
 const meta = moduleMeta(props.moduleKey)
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
@@ -170,6 +172,14 @@ async function runAction(action: string, row: EntryRow) {
   try {
     const result = await applyAction(meta.key, Number(row.id), action)
     if (!result.ok) throw new Error(result.message)
+    // 交付回执的「局部补发」生成待发段后，直接带到发送页继续
+    if (meta.key === 'delivery_receipt' && action === '局部补发') {
+      await router.push({
+        path: '/segment_delivery',
+        query: { pack: String(row['关联字幕包'] ?? ''), recipient: String(row['接收方标识'] ?? '') },
+      })
+      return
+    }
     await reload()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '操作失败'
